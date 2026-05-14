@@ -1,5 +1,8 @@
 'use client'
-// components/ui/Spinner.tsx
+import { useRef, KeyboardEvent, ClipboardEvent } from 'react'
+import { cn } from '@/lib/utils'
+
+// ── Spinner ───────────────────────────────────────────────────
 export function Spinner({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
   const s = { sm: 'h-4 w-4', md: 'h-8 w-8', lg: 'h-12 w-12' }[size]
   return (
@@ -10,8 +13,7 @@ export function Spinner({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
   )
 }
 
-// components/ui/Badge.tsx
-import { cn } from '@/lib/utils'
+// ── Badge ─────────────────────────────────────────────────────
 type BadgeVariant = 'blue' | 'green' | 'amber' | 'red' | 'gray' | 'purple'
 
 export function Badge({ variant = 'gray', children }: { variant?: BadgeVariant; children: React.ReactNode }) {
@@ -30,11 +32,7 @@ export function Badge({ variant = 'gray', children }: { variant?: BadgeVariant; 
   )
 }
 
-// components/ui/OTPInput.tsx
-'use client'
-import { useRef, KeyboardEvent, ClipboardEvent } from 'react'
-import { cn } from '@/lib/utils'
-
+// ── OTPInput ──────────────────────────────────────────────────
 interface OTPInputProps {
   value: string
   onChange: (value: string) => void
@@ -45,9 +43,7 @@ interface OTPInputProps {
 
 export function OTPInput({ value, onChange, length = 6, disabled, error }: OTPInputProps) {
   const inputs = useRef<(HTMLInputElement | null)[]>([])
-
   const digits = value.padEnd(length, '').split('').slice(0, length)
-
   const focus = (i: number) => inputs.current[i]?.focus()
 
   const handleChange = (i: number, v: string) => {

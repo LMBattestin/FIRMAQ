@@ -1,8 +1,10 @@
 'use client'
-// components/steps/Success.tsx
-'use client'
+import { useState }    from 'react'
+import { Button }      from '@/components/ui/Button'
+import { panel }       from '@/lib/api'
 import { formatDateTime } from '@/lib/utils'
 
+// ── Success ───────────────────────────────────────────────────
 interface SuccessProps {
   documentTitle: string
   signedAt:      string
@@ -12,7 +14,6 @@ interface SuccessProps {
 export function Success({ documentTitle, signedAt, allSigned }: SuccessProps) {
   return (
     <div className="animate-fade-in text-center py-8 px-2 space-y-6">
-      {/* Ícone de sucesso */}
       <div className="relative inline-flex items-center justify-center">
         <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center">
           <svg className="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
@@ -30,7 +31,6 @@ export function Success({ documentTitle, signedAt, allSigned }: SuccessProps) {
         </p>
       </div>
 
-      {/* Comprovante */}
       <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm text-left space-y-3">
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Comprovante de assinatura</p>
         <div className="space-y-2.5">
@@ -66,14 +66,7 @@ export function Success({ documentTitle, signedAt, allSigned }: SuccessProps) {
   )
 }
 
-// ────────────────────────────────────────────────────────────────
-
-// components/steps/Declined.tsx
-'use client'
-import { useState } from 'react'
-import { Button }   from '@/components/ui/Button'
-import { panel }    from '@/lib/api'
-
+// ── Declined ──────────────────────────────────────────────────
 interface DeclinedProps {
   token:        string
   sessionToken: string
@@ -146,7 +139,7 @@ export function Declined({ token, sessionToken, onBack, onConfirmed }: DeclinedP
         </p>
       </div>
 
-      <div className="space-y-3 safe-bottom">
+      <div className="space-y-3">
         <Button
           fullWidth
           variant="danger"
