@@ -1,0 +1,421 @@
+openapi: 3.0.3
+info:
+  title: FIRMAQ API
+  description: |
+    API de assinatura eletrônica com validade jurídica plena (Lei nº 14.063/2020).
+    Suporta assinatura Avançada (CPF + OTP) para contratos de serviço, locação,
+    compra e venda e comodato.
+
+    **Autenticação**: Bearer {api_key} no header Authorization.
+    Use prefixo `live_` para produção e `test_` para sandbox.
+
+    **Base legal**: Lei 14.063/2020 · Lei 13.874/2019 · CC Art. 107 · LGPD
+    **Hospedagem**: Supabase Edge Functions
+  version: 1.0.0
+  contact:
+    name: Suporte API
+    email: api@firmaq.com.br
+
+servers:
+  - url: https://{project}.supabase.co/functions/v1
+    description: Produção
+    variables:
+      project:
+        default: seu-projeto-supabase
+  - url: https://{project}.supabase.co/functions/v1
+    description: Sandbox (api key com prefixo test_)
+    variables:
+      project:
+        default: seu-projeto-supabase
+
+security:
+  - BearerAuth: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: "Insira sua API Key (live_xxx ou test_xxx)"
+
+  schemas:
+    Document:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        description: { type: string }
+        status:
+          type: string
+          enum: [draft, pending, completed, cancelled, expired]
+        signature_type:
+          type: string
+          enum: [simples, avancada, qualificada]
+        signing_mode:
+          type: string
+          enum: [parallel, sequential]
+        file_hash: { type: string, description: SHA-256 do PDF original }
+        audit_token: { type: string, description: Token para verificação pública via QR code }
+        expires_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time, nullable: true }
+        signatories:
+          type: array
+          items: { $ref: '#/components/schemas/Signatory' }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    Signatory:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        email: { type: string, format: email }
+        cpf_last_digits: { type: string, description: "Últimos 3 dígitos do CPF" }
+        role:
+          type: string
+          enum: [signer, witness, approver]
+        signing_order: { type: integer, description: "0=paralelo, 1+ = sequencial" }
+        status:
+          type: string
+          enum: [pending, viewed, signed, declined]
+        signed_at: { type: string, format: date-time, nullable: true }
+        viewed_at: { type: string, format: date-time, nullable: true }
+        declined_at: { type: string, format: date-time, nullable: true }
+        decline_reason: { type: string, nullable: true }
+        identity_verified: { type: boolean }
+        is_app_user: { type: boolean }
+        field_ids:
+          type: array
+          items: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+
+    SignatureField:
+      type: object
+      required: [field_type, page, x, y, width, height]
+      properties:
+        id: { type: string, format: uuid }
+        signatory_id: { type: string, format: uuid, nullable: true }
+        field_type:
+          type: string
+          enum: [signature, rubric, initials, date, text]
+        page: { type: integer, minimum: 1 }
+        x: { type: number }
+        y: { type: number }
+        width: { type: number }
+        height: { type: number }
+        required: { type: boolean, default: true }
+
+    AuditEntry:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        event: { type: string }
+        signatory_id: { type: string, format: uuid, nullable: true }
+        ip_address: { type: string }
+        geolocation: { type: object }
+        payload: { type: object }
+        created_at: { type: string, format: date-time }
+
+    WebhookEndpoint:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        label: { type: string }
+        url: { type: string, format: uri }
+        events: { type: array, items: { type: string } }
+        active: { type: boolean }
+        created_at: { type: string, format: date-time }
+
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        message: { type: string }
+        code: { type: string }
+
+  responses:
+    Unauthorized:
+      description: API key inválida ou ausente
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Recurso não encontrado
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    UnprocessableEntity:
+      description: Dados inválidos
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+paths:
+  /documents:
+    post:
+      tags: [Documents]
+      summary: Criar documento
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, title]
+              properties:
+                file: { type: string, format: binary }
+                title: { type: string, maxLength: 200 }
+                description: { type: string }
+                signature_type:
+                  type: string
+                  enum: [simples, avancada]
+                  default: avancada
+                signing_mode:
+                  type: string
+                  enum: [parallel, sequential]
+                  default: parallel
+                expires_in_days:
+                  type: integer
+                  default: 7
+                  minimum: 1
+                  maximum: 30
+      responses:
+        '201':
+          description: Documento criado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Document' }
+    get:
+      tags: [Documents]
+      summary: Listar documentos
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, pending, completed, cancelled, expired]
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          description: Lista de documentos
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Document' } }
+                  total: { type: integer }
+
+  /documents/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Documents]
+      summary: Obter documento
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Document' }
+
+  /documents/{id}/fields:
+    post:
+      tags: [Documents]
+      summary: Definir campos de assinatura
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fields]
+              properties:
+                fields:
+                  type: array
+                  items: { $ref: '#/components/schemas/SignatureField' }
+      responses:
+        '201':
+          description: Campos definidos
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+
+  /documents/{id}/signatories:
+    post:
+      tags: [Documents]
+      summary: Adicionar signatários
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [signatories]
+              properties:
+                signatories:
+                  type: array
+                  items:
+                    type: object
+                    required: [name, email, role]
+                    properties:
+                      name: { type: string }
+                      email: { type: string, format: email }
+                      cpf: { type: string, pattern: '^\d{11}$' }
+                      role:
+                        type: string
+                        enum: [signer, witness, approver]
+                      signing_order: { type: integer, default: 0 }
+      responses:
+        '201':
+          description: Signatários adicionados
+
+  /documents/{id}/send:
+    post:
+      tags: [Documents]
+      summary: Enviar para assinatura
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message: { type: string }
+      responses:
+        '200':
+          description: Enviado
+
+  /documents/{id}/download:
+    get:
+      tags: [Documents]
+      summary: URL de download
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: version
+          in: query
+          schema:
+            type: string
+            enum: [original, signed]
+            default: signed
+      responses:
+        '200':
+          description: URL gerada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url: { type: string, format: uri }
+
+  /verify/{audit_token}:
+    get:
+      tags: [Public Verification]
+      summary: Verificar autenticidade (público)
+      security: []
+      parameters:
+        - name: audit_token
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+
+  /webhooks:
+    post:
+      tags: [Webhooks]
+      summary: Registrar webhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url, events]
+              properties:
+                url: { type: string, format: uri }
+                events: { type: array, items: { type: string } }
+      responses:
+        '201':
+          description: Criado
+
+  /webhooks/{id}/retry/{delivery_id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: delivery_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Webhooks]
+      summary: Reprocessar falha
+      responses:
+        '202':
+          description: Agendado
+
+  /s/{token}:
+    get:
+      tags: [Signer Panel]
+      summary: Dados do painel web
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+
+  /s/{token}/verify:
+    post:
+      tags: [Signer Panel]
+      summary: Verificar identidade
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [otp]
+              properties:
+                otp: { type: string, pattern: '^\d{6}$' }
+                cpf: { type: string, pattern: '^\d{11}$' }
+      responses:
+        '200':
+          description: Verificado
